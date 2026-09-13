@@ -1,11 +1,17 @@
-# Dependencies
-/node_modules/
-/jspm_packages/
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
 
 # Environment variables
 .env
 .env.*
 !.env.example
+
+# Dependencies
+/node_modules/
+/jspm_packages/
 
 # Build outputs
 /dist/
