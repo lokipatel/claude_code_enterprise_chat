@@ -4,6 +4,12 @@ Every supported file type is reduced to plain text so it can be fed into
 Graphiti the same way an email body is: images don't get real OCR here,
 they get their format/dimensions plus a human-authored caption from an
 optional `<name>.caption.txt` sidecar next to the image.
+
+Documents are then chunked with the `semantica` library before ingestion --
+emails are short enough to stay as a single Graphiti episode each, but a long
+document (a project plan, a spec) gets split into smaller, semantically
+coherent pieces so each Graphiti extraction call has a focused, bounded
+amount of text to work with.
 """
 
 from __future__ import annotations
@@ -14,7 +20,8 @@ from pathlib import Path
 from docx import Document as DocxDocument
 from PIL import Image
 from pptx import Presentation
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+from semantica.split import TextSplitter
 
 TEXT_EXTENSIONS = {
     ".txt": "text",
@@ -25,15 +32,37 @@ TEXT_EXTENSIONS = {
 }
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
 
+# Tuned for solid LLM extraction granularity while keeping enough context per
+# chunk for coherent entity/fact extraction.
+_CHUNK_SIZE = 800
+_CHUNK_OVERLAP = 100
+
+_splitter = TextSplitter(method="recursive", chunk_size=_CHUNK_SIZE, chunk_overlap=_CHUNK_OVERLAP)
+
+
+def chunk_text(text: str) -> list[str]:
+    """Split document text into semantically coherent chunks via semantica."""
+    if not text.strip():
+        return []
+    chunks = _splitter.split(text)
+    return [chunk.text for chunk in chunks] if chunks else [text]
+
 
 class DocumentRecord(BaseModel):
-    """A project document reduced to plain text, ready for Graphiti ingestion."""
+    """A project document reduced to plain text (and chunks), ready for Graphiti ingestion."""
 
     doc_id: str
     filename: str
     doc_type: str
     content_text: str
     modified_at: datetime
+    chunks: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _populate_chunks(self) -> DocumentRecord:
+        if not self.chunks:
+            self.chunks = chunk_text(self.content_text)
+        return self
 
 
 class UnsupportedDocumentTypeError(ValueError):
