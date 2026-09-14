@@ -1,0 +1,6 @@
+Architecture diagram showing the email knowledge graph pipeline as four
+connected stages: Gmail API -> Ingestion Layer (src/gmail_client.py) ->
+Graphiti Engine (entity/fact extraction) -> Neo4j Graph DB. An arrow loops
+back from Neo4j to a "Query / CLI" box, representing hybrid temporal
+search answering questions like "What is the updated meeting time with
+Jane?".

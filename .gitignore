@@ -43,3 +43,11 @@ Thumbs.db
 *.njsproj
 *.sln
 *.swp
+
+credentials.json
+
+.claude/
+pyproject.toml
+sync_state.json
+tests/__pycache__/
+token.json
