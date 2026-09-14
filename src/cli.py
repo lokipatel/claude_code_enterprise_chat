@@ -159,7 +159,7 @@ def sync_docs(
             for doc, content_hash in new_or_changed:
                 await engine.ingest_document(doc)
                 state.ingested_documents[doc.doc_id] = content_hash
-                typer.echo(f"Ingested: {doc.doc_id} ({doc.doc_type})")
+                typer.echo(f"Ingested: {doc.doc_id} ({doc.doc_type}, {len(doc.chunks)} chunk(s))")
 
             state.last_synced_at = datetime.now(timezone.utc)
             save_doc_sync_state(state, settings.doc_sync_state_path)

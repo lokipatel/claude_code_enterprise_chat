@@ -93,26 +93,52 @@ class GraphitiEngine:
         )
         return result
 
-    async def ingest_document(self, doc: DocumentRecord) -> AddEpisodeResults:
-        """Add a project document (code, docs, image, etc.) as a Graphiti episode."""
-        episode_name = f"Document: {doc.filename} ({doc.doc_type})"
-        episode_body = f"Document: {doc.filename}\nType: {doc.doc_type}\n\n{doc.content_text}"
+    async def ingest_document(self, doc: DocumentRecord) -> list[AddEpisodeResults]:
+        """Add a project document as one Graphiti episode per semantica chunk.
 
-        result = await self.graphiti.add_episode(
-            name=episode_name,
-            episode_body=episode_body,
-            source_description=f"document:{doc.doc_type}",
-            reference_time=doc.modified_at,
-            source=EpisodeType.text,
-            group_id=DOCUMENT_GROUP_ID,
-        )
+        The episode `name` is identical across all chunks of a document (the
+        same value used before chunking existed) so retrieval can still parse
+        the filename back out of it for citation; chunk position instead goes
+        into the episode body. Consecutive chunks are linked via
+        `previous_episode_uuids` so extraction has cross-chunk context.
+        """
+        episode_name = f"Document: {doc.filename} ({doc.doc_type})"
+        source_description = f"document:{doc.doc_type}"
+        chunk_count = len(doc.chunks)
+
+        results: list[AddEpisodeResults] = []
+        previous_episode_uuid: str | None = None
+
+        for index, chunk in enumerate(doc.chunks, start=1):
+            episode_body = (
+                f"Document: {doc.filename}\n"
+                f"Type: {doc.doc_type}\n"
+                f"Chunk: {index}/{chunk_count}\n\n"
+                f"{chunk}"
+            )
+            result = await self.graphiti.add_episode(
+                name=episode_name,
+                episode_body=episode_body,
+                source_description=source_description,
+                reference_time=doc.modified_at,
+                source=EpisodeType.text,
+                group_id=DOCUMENT_GROUP_ID,
+                previous_episode_uuids=(
+                    [previous_episode_uuid] if previous_episode_uuid else None
+                ),
+            )
+            previous_episode_uuid = result.episode.uuid
+            results.append(result)
+
+        total_edges = sum(len(result.edges) for result in results)
         logger.info(
-            "Ingested document %s (%s, %d edges).",
+            "Ingested document %s (%s, %d chunk(s), %d edges).",
             doc.filename,
             doc.doc_type,
-            len(result.edges),
+            chunk_count,
+            total_edges,
         )
-        return result
+        return results
 
     async def close(self) -> None:
         await self.graphiti.close()

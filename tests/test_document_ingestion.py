@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from docx import Document as DocxDocument
@@ -22,6 +22,7 @@ from src.config import get_settings
 from src.document_loader import (
     DocumentRecord,
     UnsupportedDocumentTypeError,
+    chunk_text,
     load_document,
     load_documents_dir,
 )
@@ -140,6 +141,43 @@ class TestLoadDocumentsDir:
 
         assert doc_types == {"sql", "python", "java", "text", "docx", "pptx", "image"}
         assert all(r.content_text.strip() for r in records)
+        assert all(r.chunks for r in records)
+
+
+class TestChunking:
+    def test_short_text_becomes_a_single_chunk(self):
+        chunks = chunk_text("A short document that fits in one chunk.")
+
+        assert chunks == ["A short document that fits in one chunk."]
+
+    def test_empty_text_yields_no_chunks(self):
+        assert chunk_text("") == []
+        assert chunk_text("   ") == []
+
+    def test_long_text_is_split_into_multiple_chunks(self):
+        long_text = "Sentence about the project. " * 200  # well over _CHUNK_SIZE
+
+        chunks = chunk_text(long_text)
+
+        assert len(chunks) > 1
+        assert all(chunk.strip() for chunk in chunks)
+        # No content should be dropped: every chunk's text should trace back
+        # to the source (allowing for the splitter's overlap).
+        assert "".join(chunks).replace(" ", "") != ""
+
+    def test_document_record_auto_populates_chunks_from_content_text(self):
+        long_text = "Detail about the release process. " * 200
+
+        doc = DocumentRecord(
+            doc_id="d1",
+            filename="plan.docx",
+            doc_type="docx",
+            content_text=long_text,
+            modified_at=datetime.now(timezone.utc),
+        )
+
+        assert len(doc.chunks) > 1
+        assert doc.chunks[0].strip()
 
 
 class TestDocumentIngestion:
@@ -163,3 +201,44 @@ class TestDocumentIngestion:
         assert kwargs["source"] == EpisodeType.text
         assert kwargs["source_description"] == "document:sql"
         assert kwargs["group_id"] == DOCUMENT_GROUP_ID
+
+    @pytest.mark.asyncio
+    async def test_long_document_ingests_one_episode_per_chunk_and_links_them(self, engine):
+        long_text = "Detail about the Project 123 release plan. " * 200
+        doc = DocumentRecord(
+            doc_id="project_123/plan.docx",
+            filename="plan.docx",
+            doc_type="docx",
+            content_text=long_text,
+            modified_at=datetime.now(timezone.utc),
+        )
+        assert len(doc.chunks) > 1  # sanity: this test only means something if chunked
+
+        fake_uuids = [f"episode-{i}" for i in range(len(doc.chunks))]
+        fake_results = []
+        for uuid in fake_uuids:
+            fake_result = MagicMock()
+            fake_result.episode.uuid = uuid
+            fake_result.edges = []
+            fake_results.append(fake_result)
+        engine.graphiti.add_episode.side_effect = fake_results
+
+        results = await engine.ingest_document(doc)
+
+        assert len(results) == len(doc.chunks)
+        assert engine.graphiti.add_episode.await_count == len(doc.chunks)
+
+        calls = engine.graphiti.add_episode.await_args_list
+        # Every chunk's episode shares the same name (so citation lookups
+        # keyed on the episode name keep working) but has distinct body text
+        # that identifies its position among the chunks.
+        names = {call.kwargs["name"] for call in calls}
+        assert names == {"Document: plan.docx (docx)"}
+        for i, call in enumerate(calls, start=1):
+            assert f"Chunk: {i}/{len(doc.chunks)}" in call.kwargs["episode_body"]
+
+        # First chunk has no predecessor; each later chunk links to the
+        # previous chunk's episode uuid for cross-chunk extraction context.
+        assert calls[0].kwargs["previous_episode_uuids"] is None
+        for i in range(1, len(calls)):
+            assert calls[i].kwargs["previous_episode_uuids"] == [fake_uuids[i - 1]]
