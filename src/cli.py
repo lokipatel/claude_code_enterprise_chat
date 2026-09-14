@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +21,14 @@ from src.document_loader import load_documents_dir
 from src.gmail_client import GmailAuthError, GmailClient
 from src.graphiti_engine import GraphitiEngine
 from src.qa import answer_question
-from src.sync_state import GmailSyncState, load_gmail_sync_state, save_gmail_sync_state
+from src.sync_state import (
+    DocSyncState,
+    GmailSyncState,
+    load_doc_sync_state,
+    load_gmail_sync_state,
+    save_doc_sync_state,
+    save_gmail_sync_state,
+)
 
 # WARNING by default so third-party libraries (httpx, neo4j, graphiti_core,
 # googleapiclient) stay quiet; the CLI's own typer.echo() progress lines and
@@ -100,15 +108,29 @@ def sync_gmail(
     asyncio.run(_run())
 
 
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 @app.command("sync-docs")
 def sync_docs(
     path: str = typer.Option(
         "documents", "--path", help="Directory of project documents to ingest."
     ),
+    reset: bool = typer.Option(
+        False, "--reset", help="Ignore the checkpoint and re-ingest every document."
+    ),
 ) -> None:
-    """Load project documents (code, docs, sql, images, ...) and ingest them into Graphiti."""
+    """Load project documents and ingest only the ones that are new or changed.
+
+    Ingested content hashes are checkpointed to doc_sync_state.json (keyed by
+    doc_id, not just filename), so re-running this command won't create
+    duplicate episodes for unchanged documents -- but editing a document's
+    content DOES cause it to be re-ingested on the next run.
+    """
 
     async def _run() -> None:
+        settings = get_settings()
         docs_dir = Path(path)
         if not docs_dir.is_dir():
             typer.echo(f"Documents directory not found: {docs_dir}", err=True)
@@ -119,12 +141,32 @@ def sync_docs(
             typer.echo(f"No documents found under {docs_dir}.")
             return
 
-        engine = GraphitiEngine()
+        state = DocSyncState() if reset else load_doc_sync_state(settings.doc_sync_state_path)
+
+        new_or_changed = []
+        for doc in docs:
+            content_hash = _content_hash(doc.content_text)
+            if state.ingested_documents.get(doc.doc_id) != content_hash:
+                new_or_changed.append((doc, content_hash))
+        already_synced = len(docs) - len(new_or_changed)
+
+        if not new_or_changed:
+            typer.echo(f"No new or changed documents to ingest ({already_synced} already up to date).")
+            return
+
+        engine = GraphitiEngine(settings)
         try:
-            for doc in docs:
+            for doc, content_hash in new_or_changed:
                 await engine.ingest_document(doc)
+                state.ingested_documents[doc.doc_id] = content_hash
                 typer.echo(f"Ingested: {doc.doc_id} ({doc.doc_type})")
-            typer.echo(f"Synced {len(docs)} document(s) into Graphiti.")
+
+            state.last_synced_at = datetime.now(timezone.utc)
+            save_doc_sync_state(state, settings.doc_sync_state_path)
+            typer.echo(
+                f"Synced {len(new_or_changed)} new/changed document(s) into Graphiti "
+                f"({already_synced} already up to date)."
+            )
         finally:
             await engine.close()
 

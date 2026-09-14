@@ -1,0 +1,13 @@
+{
+  "ingested_documents": {
+    "diagrams/architecture_diagram.png": "b35cc53b00e778c48c4b2c3f4d79e250b3ae34026a536cae48e8af62c1eb0356",
+    "notes/setup_notes.txt": "02b029eb60c950562202a012fd2c56231906b3ab220ddc6237c16cd8bac8e53b",
+    "project_123/Project_123_Plan.docx": "70a23a11be830084a43700a8159e38be10e0d56dc1ab0824336916b128eaa8ba",
+    "schema/neo4j_schema.sql": "c8382112f58904d0b17dce55219eb7257ad39b70dc361bbfcd30c4d2933fe668",
+    "scripts/EmailWebhookListener.java": "c6bc40a0cf36a2a8f8829d96d98be998a56bd0231e8dffea3dd61492a56dea04",
+    "scripts/backfill_embeddings.py": "ac70a19ea3f773f989422a1cb09c4216b1c3cfd9590905d2d5d9922a950ae161",
+    "slides/project_overview.pptx": "defe3fbc724a6c5aedeb14c7a9fa5762e73f1fdc6ccba1a600f628c0018f94b0",
+    "specs/project_charter.docx": "707ac2d42002938e161b50528fd817f566f0ce67e19ca32e426dadfa037d8850"
+  },
+  "last_synced_at": "2026-09-14T15:35:21.326408Z"
+}

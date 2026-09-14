@@ -48,9 +48,12 @@ class Settings(BaseSettings):
     )
     gmail_scopes: tuple[str, ...] = ("https://www.googleapis.com/auth/gmail.readonly",)
 
-    # Incremental-sync checkpoint (tracks which Gmail messages are already ingested)
+    # Incremental-sync checkpoints (track what's already been ingested)
     sync_state_path: Path = Field(
         default=PROJECT_ROOT / "sync_state.json", validation_alias="SYNC_STATE_PATH"
+    )
+    doc_sync_state_path: Path = Field(
+        default=PROJECT_ROOT / "doc_sync_state.json", validation_alias="DOC_SYNC_STATE_PATH"
     )
 
 
