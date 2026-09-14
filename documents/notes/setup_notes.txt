@@ -1,0 +1,38 @@
+Email Knowledge Graph — Setup Notes
+=====================================
+
+Neo4j (Aura)
+------------
+1. Create a free Aura instance at console.neo4j.io.
+2. Copy the connection URI, username, and generated password into .env
+   as NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD.
+3. Run `python -m src.cli init` once to create Graphiti's indices and
+   constraints before ingesting anything.
+
+Gmail OAuth
+-----------
+1. In Google Cloud Console, enable the Gmail API for the project.
+2. Create an OAuth 2.0 Client ID of type "Desktop app".
+3. Download the JSON and save it as credentials.json in the project root.
+4. First run of `python -m src.cli sync-gmail` opens a browser consent
+   screen; the resulting token is cached in token.json so future runs
+   don't prompt again.
+5. Scope used: https://www.googleapis.com/auth/gmail.readonly (read-only,
+   no send/modify access needed for this project).
+
+OpenAI
+------
+- OPENAI_API_KEY in .env is used both for Graphiti's extraction LLM calls
+  and for embeddings (text-embedding-3-small by default).
+- Watch usage on high-volume mailboxes — every ingested episode triggers
+  at least one LLM extraction call plus embedding calls per new fact.
+
+Known gotchas
+-------------
+- Aura free tier pauses after inactivity; the first query after a pause
+  can take ~30s to wake the instance.
+- Gmail's `internalDate` is used as a fallback only when a message is
+  missing a Date header; prefer the header when present since it
+  reflects the sender's original timestamp.
+- Jane Doe (Product Owner) is the point of contact for scope questions
+  on this project.
